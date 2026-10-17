@@ -1,5 +1,6 @@
 #pragma once
 // Thread 1: Market Data socket for one instrument -> Tick queue.
+// Uses the Market Data session logged in by main (shared with thread 3's history calls).
 // Subscribes to 1501 Touchline on every (re)connect and emits a Tick only when TotalTradedQuantity
 // moves (a trade happened); quote-only updates are dropped.
 // 1501 payloads put the touchline fields in a "Touchline" object or at the top level; both are read
@@ -12,6 +13,7 @@
 #include "edge/core/json.hpp"
 #include "edge/core/log.hpp"
 #include "edge/core/types.hpp"
+#include "edge/net/rest_client.hpp"
 #include "edge/net/socketio_client.hpp"
 #include "edge/xts/session.hpp"
 
@@ -19,18 +21,15 @@ namespace edge {
 
 class MarketDataThread {
  public:
-  MarketDataThread(const Config& cfg, Queue<Tick>& out) : cfg_(cfg), out_(out) {}
+  MarketDataThread(const Config& cfg, XtsSession md, Queue<Tick>& out) : cfg_(cfg), md_(std::move(md)), out_(out) {}
 
   void operator()(std::stop_token st) {
     set_thread_name("edge-md");
     try {
-      RedisStore redis(cfg_.redis);
       RestClient http(cfg_.xts.md_base(), cfg_.engine.rest);
-      const auto session = md_login(http, redis, cfg_.redis);
-      http.set_token(session.token);
-      ELOG_INFO("market data session up for {}", session.user_id);
+      http.set_token(md_.token);
       SocketIoClient socket(
-          "md", cfg_.xts.host, md_socket_target(session), cfg_.engine.socket,
+          "md", cfg_.xts.host, md_socket_target(md_), cfg_.engine.socket,
           [this](std::string_view name, std::string_view data) { on_event(name, data); },
           [this, &http] { subscribe(http); });
       socket.run(st);
@@ -74,6 +73,7 @@ class MarketDataThread {
   }
 
   const Config& cfg_;
+  const XtsSession md_;
   Queue<Tick>& out_;
   simdjson::dom::parser dom_;  // IXWebSocket thread only
   std::int64_t last_ttq_ = -1;

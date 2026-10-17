@@ -1,6 +1,7 @@
 #pragma once
 // Two JSON files -> Config. Every field is required; a missing one fails at start-up.
-//   config.json         what to trade and where: XTS, instrument, candle timeframe, strategy, Redis, logging
+//   config.json         what to trade and where: XTS, instrument, candle timeframe, strategy, Redis, logging;
+//                       it names the strategy's own JSON and the session file (paths relative to it)
 //   engine-config.json  how the engine runs: queue polling, candle close grace, order-engine
 //                       reconciliation, REST connection tuning, socket reconnect/watchdog.
 //                       Read from the same folder as config.json.
@@ -29,9 +30,9 @@ struct Config {
     std::int64_t timeframe_minutes;
   } candle;
   struct Strategy {
-    std::string name;
-    std::int64_t fast, slow;
+    std::string name, params_file;  // params_file: the strategy's own JSON (indicator, trade, history_days)
   } strategy;
+  std::string session_file;         // exchange calendar + entry/square-off rules
   struct Redis {
     std::string host, password_env, md_app_key, md_secret_key, ia_token, ia_user_id, state_prefix;
     std::int64_t port, db;
@@ -63,6 +64,8 @@ struct Config {
 
 inline Config load_config(const std::string& path) {
   auto str = [](auto obj, const char* key) { return std::string(std::string_view(obj[key])); };
+  const auto dir = std::filesystem::path(path).parent_path();
+  auto resolve = [&dir](const std::string& file) { return (dir / file).string(); };  // relative to config.json
   Config c;
   {
     auto json = simdjson::padded_string::load(path);
@@ -82,8 +85,9 @@ inline Config load_config(const std::string& path) {
     c.candle = {int64_t(doc["candle"]["timeframe_minutes"])};
     {
       auto o = doc["strategy"].get_object();
-      c.strategy = {str(o, "name"), int64_t(o["fast"]), int64_t(o["slow"])};
+      c.strategy = {str(o, "name"), resolve(str(o, "params_file"))};
     }
+    c.session_file = resolve(std::string(std::string_view(doc["session_file"])));
     {
       auto o = doc["redis"].get_object();
       c.redis = {str(o, "host"), str(o, "password_env"), str(o, "md_app_key"), str(o, "md_secret_key"),
@@ -96,7 +100,7 @@ inline Config load_config(const std::string& path) {
     }
   }
   {
-    const auto engine_path = (std::filesystem::path(path).parent_path() / "engine-config.json").string();
+    const auto engine_path = resolve("engine-config.json");
     auto json = simdjson::padded_string::load(engine_path);
     simdjson::ondemand::parser parser;
     auto doc = parser.iterate(json);

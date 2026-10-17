@@ -1,0 +1,16 @@
+{
+  "indicator": {
+    "window_len": 28,
+    "v_len": 14,
+    "obv_len": 1,
+    "ma_len": 9,
+    "slow_len": 26,
+    "reg_len": 2,
+    "channel_mult": 1.0
+  },
+  "trade": {
+    "allow_long": true,
+    "allow_short": false
+  },
+  "history_days": 30
+}

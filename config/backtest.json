@@ -1,0 +1,16 @@
+{
+  "config": "config/config.json",
+  "source": "xts",
+  "csv_path": "backtest_results/CRUDEOILM26NOVFUT_5m.csv",
+  "from": "2026-08-20",
+  "to": "2026-10-17",
+  "trade_from": "2026-09-15",
+  "costs": {
+    "round_trip_points": 3.0,
+    "slippage_points_per_side": 1.0,
+    "brokerage_per_order": 20.0
+  },
+  "point_value": 10.0,
+  "trades_csv": "backtest_results/obv_macd_trades.csv",
+  "signals_csv": "backtest_results/obv_macd_signals.csv"
+}

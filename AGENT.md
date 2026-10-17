@@ -25,8 +25,10 @@ Load it in a shell with
 # Layout (`include/edge/`)
 - `core/` — shared basics: `types.hpp` (Tick, Candle, Signal, OrderUpdate, queues), `config.hpp` (config.json), `json.hpp` (simdjson helpers), `log.hpp` (quill)
 - `net/` — transports: `rest_client.hpp` (libcurl), `socketio_client.hpp` (Socket.IO over IXWebSocket)
-- `xts/` — XTS specifics: `session.hpp` (logins, socket URLs)
+- `xts/` — XTS specifics: `session.hpp` (logins, socket URLs), `history.hpp` (OHLC history for warm-up and backtest)
 - `store/` — `redis_store.hpp` (credentials in, bot state out)
-- `strategy/` — `strategy.hpp` (interface), one header per strategy (e.g. `ema_cross.hpp`), `factory.hpp` (name -> strategy)
+- `strategy/` — `strategy.hpp` (interface), one header per strategy (`obv_macd.hpp`), `session.hpp` (calendar), `trade_rules.hpp` (cross + session -> target, shared with the backtest), `factory.hpp` (name -> strategy)
 - `threads/` — one header per thread, numbered as above: `t1_market_data`, `t2_candle_builder`, `t3_strategy_runner`, `t4_order_engine`, `t5_order_updates`
 - `src/main.cpp` — wires the queues and starts the five threads
+- `tools/` — `backtest.cpp` (same strategy + trade rules as the bot), `rest_probe.cpp`
+- `config/` — `config.json`, `engine-config.json`, `strategies/<name>.json`, `session-mcx.json`, `backtest.json`

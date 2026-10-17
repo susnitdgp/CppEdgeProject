@@ -16,7 +16,8 @@
     "protect_points": 10
   },
   "candle": { "timeframe_minutes": 5 },
-  "strategy": { "name": "ema_cross", "fast": 9, "slow": 21 },
+  "strategy": { "name": "obv_macd", "params_file": "strategies/obv_macd.json" },
+  "session_file": "session-mcx.json",
   "redis": {
     "host": "127.0.0.1",
     "port": 6379,

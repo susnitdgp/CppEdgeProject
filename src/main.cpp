@@ -2,23 +2,29 @@
 //   T1 market data socket --Tick--> T2 candles --Candle--> T3 strategy --Signal--+
 //                                                                                v
 //   T5 interactive socket ------------------------OrderUpdate----------------> T4 order engine
-// Usage: cpp_edge [config/config.json]   (load the Redis password first: see AGENT.md)
+// main logs in to Market Data once (T1's socket and T3's history calls share the session) and
+// reads today's Interactive session from Redis (T4 orders, T5 socket).
+// Usage: cpp_edge [config/config.json]   (load the Redis password first: see run.sh)
 #include <curl/curl.h>
 
 #include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <format>
+#include <string>
 #include <thread>
 
-#include "edge/threads/t2_candle_builder.hpp"
 #include "edge/core/config.hpp"
 #include "edge/core/log.hpp"
+#include "edge/core/types.hpp"
+#include "edge/net/rest_client.hpp"
+#include "edge/store/redis_store.hpp"
 #include "edge/threads/t1_market_data.hpp"
+#include "edge/threads/t2_candle_builder.hpp"
+#include "edge/threads/t3_strategy_runner.hpp"
 #include "edge/threads/t4_order_engine.hpp"
 #include "edge/threads/t5_order_updates.hpp"
-#include "edge/threads/t3_strategy_runner.hpp"
-#include "edge/core/types.hpp"
 #include "edge/xts/session.hpp"
 
 namespace {
@@ -50,6 +56,16 @@ int main(int argc, char** argv) {
   try {
     RedisStore redis(cfg.redis);
     const auto ia = ia_session(redis, cfg.redis);
+    XtsSession md;
+    {
+      RestClient http(cfg.xts.md_base(), cfg.engine.rest);
+      md = md_login(http, redis, cfg.redis);
+    }
+    ELOG_INFO("market data session up for {}", md.user_id);
+    const auto saved = redis.get_field(std::format("position:{}", cfg.instrument.id), "lots");
+    const auto lots = saved.empty() ? 0 : std::stoll(saved);
+    const std::int32_t start_position = (lots > 0) - (lots < 0);
+
     Queue<Tick> ticks;
     Queue<Candle> candles;
     Queue<EngineEvent> engine;
@@ -57,9 +73,9 @@ int main(int argc, char** argv) {
       // Consumers start first; jthreads stop and join in reverse order, so producers stop first.
       std::jthread t4{OrderEngineThread{cfg, ia, engine}};
       std::jthread t5{OrderUpdateThread{cfg, ia, engine}};
-      std::jthread t3{StrategyThread{cfg, candles, engine}};
+      std::jthread t3{StrategyThread{cfg, md, start_position, candles, engine}};
       std::jthread t2{CandleThread{cfg, ticks, candles}};
-      std::jthread t1{MarketDataThread{cfg, ticks}};
+      std::jthread t1{MarketDataThread{cfg, md, ticks}};
       while (!g_stop.load()) std::this_thread::sleep_for(200ms);
       ELOG_INFO("shutdown requested");
     }
