@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(CppEdge VERSION 0.4.0 LANGUAGES CXX)
+project(CppEdge VERSION 0.4.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,3 +50,9 @@ target_compile_options(cpp_edge PRIVATE -Wall -Wextra -Wpedantic $<$<CONFIG:Rele
 target_link_libraries(cpp_edge PRIVATE
   ixwebsocket OpenSSL::SSL OpenSSL::Crypto CURL::libcurl
   simdjson::simdjson quill::quill redis++_static ${HIREDIS_LIB} Threads::Threads)
+
+# ---- tools
+add_executable(rest_probe tools/rest_probe.cpp)
+target_include_directories(rest_probe PRIVATE include ${concurrentqueue_SOURCE_DIR})
+target_compile_options(rest_probe PRIVATE -Wall -Wextra -Wpedantic)
+target_link_libraries(rest_probe PRIVATE CURL::libcurl simdjson::simdjson redis++_static ${HIREDIS_LIB} Threads::Threads)
