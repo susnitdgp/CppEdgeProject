@@ -13,6 +13,7 @@ Start with the CRUDEOILM Nov 26 contract (CRUDEOILM26NOVFUT, ExchangeInstrumentI
   - Third thread runs the strategy on candles and generates trade signals.
   - Fourth thread executes the order engine and keeps a record of order state.
   - Fifth thread listens to order updates and updates the Redis state accordingly.
+  - Sixth thread records raw market data (every subscribed XTS message + receive time) to daily gzip JSON-lines files, off the trading path.
 - Keep every thread in a separate .hpp file.
 - Use JSON for configuration.
 - Use Redis for all state management.
@@ -28,7 +29,7 @@ Load it in a shell with
 - `xts/` — XTS specifics: `session.hpp` (logins, socket URLs), `history.hpp` (OHLC history for warm-up and backtest)
 - `store/` — `redis_store.hpp` (credentials in, bot state out)
 - `strategy/` — framework: `strategy.hpp` (interface), `pine.hpp` (Pine building blocks), `session.hpp` (calendar), `trade_rules.hpp` (cross + session -> target, shared with the backtest), `factory.hpp` (name -> strategy); each strategy in its own folder `strategy/<name>/<name>.hpp` (`alpha_trend/`, `obv_macd/`) with settings in `config/strategies/<name>.json`
-- `threads/` — one header per thread, numbered as above: `t1_market_data`, `t2_candle_builder`, `t3_strategy_runner`, `t4_order_engine`, `t5_order_updates`
-- `src/main.cpp` — wires the queues and starts the five threads
+- `threads/` — one header per thread, numbered as above: `t1_market_data`, `t2_candle_builder`, `t3_strategy_runner`, `t4_order_engine`, `t5_order_updates`, `t6_recorder`
+- `src/main.cpp` — wires the queues and starts the six threads
 - `tools/` — `backtest.cpp` (same strategy + trade rules as the bot), `rest_probe.cpp`
 - `config/` — `config.json`, `engine-config.json`, `strategies/<name>.json`, `session-mcx.json`, `backtest.json`

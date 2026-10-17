@@ -69,3 +69,6 @@ Testing/
 
 # backtest data and results
 backtest_results/
+
+# recorded market data
+data/

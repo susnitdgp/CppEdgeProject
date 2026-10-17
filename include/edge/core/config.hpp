@@ -3,7 +3,7 @@
 //   config.json         what to trade and where: XTS, instrument, candle timeframe, strategy, Redis, logging;
 //                       it names the strategy's own JSON and the session file (paths relative to it)
 //   engine-config.json  how the engine runs: queue polling, candle close grace, order-engine
-//                       reconciliation, REST connection tuning, socket reconnect/watchdog.
+//                       reconciliation, REST connection tuning, socket reconnect/watchdog, recorder.
 //                       Read from the same folder as config.json.
 #include <simdjson.h>
 
@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace edge {
 
@@ -58,6 +59,12 @@ struct Config {
     struct Socket {
       std::int64_t reconnect_min_ms, reconnect_max_ms, watchdog_tick_ms;
     } socket;
+    struct Recorder {
+      bool enabled;
+      std::string dir;                  // <dir>/<symbol>/<YYYY-MM-DD>.jsonl.gz
+      std::vector<std::int64_t> feeds;  // XTS message codes subscribed and recorded (1501, 1502, 1505, 1510)
+      std::int64_t flush_interval_ms, max_queue;
+    } recorder;
     std::chrono::milliseconds queue_poll() const { return std::chrono::milliseconds(queue_poll_ms); }
   } engine;
 };
@@ -119,6 +126,14 @@ inline Config load_config(const std::string& path) {
     {
       auto o = doc["socket"].get_object();
       e.socket = {int64_t(o["reconnect_min_ms"]), int64_t(o["reconnect_max_ms"]), int64_t(o["watchdog_tick_ms"])};
+    }
+    {
+      auto o = doc["recorder"].get_object();
+      e.recorder.enabled = bool(o["enabled"]);
+      e.recorder.dir = str(o, "dir");
+      for (auto v : o["feeds"].get_array()) e.recorder.feeds.push_back(int64_t(v));
+      e.recorder.flush_interval_ms = int64_t(o["flush_interval_ms"]);
+      e.recorder.max_queue = int64_t(o["max_queue"]);
     }
   }
   return c;

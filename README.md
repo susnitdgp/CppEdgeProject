@@ -3,12 +3,12 @@
 A multithreaded C++20 algorithmic trading bot for the Symphony **XTS** APIs (CompositeEdge), starting with
 **CRUDEOILM26NOVFUT** (MCX, ExchangeInstrumentID 573423), 1 lot, MIS.
 
-Current version: **0.8.0** (see `CMakeLists.txt`). Active strategy: **AlphaTrend** (set in `config/config.json`);
+Current version: **0.9.0** (see `CMakeLists.txt`). Active strategy: **AlphaTrend** (set in `config/config.json`);
 **OBV MACD** is also available. Both are ports of TradingView indicators.
 
 ## How it works
 
-Five threads, one job each, connected by lock-free moodycamel queues:
+Six threads, one job each, connected by lock-free moodycamel queues:
 
 ```
  XTS Market Data socket                                           XTS Interactive socket
@@ -22,6 +22,8 @@ Five threads, one job each, connected by lock-free moodycamel queues:
                                                       T4 order engine ◀─────┘
                                                             │
                                          REST: place orders, poll broker positions
+
+ T1 ──raw copies──▶ T6 recorder ──▶ data/raw/<symbol>/<YYYY-MM-DD>.jsonl.gz   (never blocks trading)
 ```
 
 | Thread | Header | What it does |
@@ -31,6 +33,7 @@ Five threads, one job each, connected by lock-free moodycamel queues:
 | T3 | `threads/t3_strategy_runner.hpp` | Warms the strategy up on XTS history, fills bar gaps from history, skips off-session bars, turns crosses into target positions via the trade rules |
 | T4 | `threads/t4_order_engine.hpp` | Target-position loop: one marketable limit order at a time for the difference between target and position |
 | T5 | `threads/t5_order_updates.hpp` | Interactive socket: writes order state to Redis and passes updates to T4 |
+| T6 | `threads/t6_recorder.hpp` | Records every subscribed market-data message (1501/1502/1505/1510) and socket status, as received, with our receive time |
 
 `main` logs in to Market Data once; T1's socket and T3's history calls share that session.
 
@@ -108,8 +111,8 @@ include/edge/
 ├── strategy/  strategy.hpp (interface) · pine.hpp · session.hpp (calendar) · trade_rules.hpp · factory.hpp
 │   ├── alpha_trend/alpha_trend.hpp
 │   └── obv_macd/obv_macd.hpp
-└── threads/   t1_market_data · t2_candle_builder · t3_strategy_runner · t4_order_engine · t5_order_updates
-src/main.cpp                    wires the queues and starts the five threads
+└── threads/   t1_market_data · t2_candle_builder · t3_strategy_runner · t4_order_engine · t5_order_updates · t6_recorder
+src/main.cpp                    wires the queues and starts the six threads
 config/config.json              what to trade and where; names the strategy and session files
 config/engine-config.json       how the engine runs (intervals, timeouts, backoff)
 config/strategies/<name>.json   per-strategy settings, long/short switches, warm-up days
@@ -225,6 +228,11 @@ and `rules`: `entry_start_after_open_min`, `entry_cutoff_before_close_min`, `squ
 | `rest.dns_cache_s` | 3600 | DNS cache lifetime |
 | `socket.reconnect_min_ms` / `reconnect_max_ms` | 1000 / 30000 | WebSocket reconnect backoff |
 | `socket.watchdog_tick_ms` | 250 | Ping / dead-link check interval |
+| `recorder.enabled` | true | Record raw market data (thread 6) |
+| `recorder.dir` | `data/raw` | Output folder (`<dir>/<symbol>/<YYYY-MM-DD>.jsonl.gz`, not committed) |
+| `recorder.feeds` | 1501, 1502, 1505, 1510 | XTS feeds subscribed and recorded: touchline, 5-level depth, 1-min candles, open interest |
+| `recorder.flush_interval_ms` | 2000 | How often the file is flushed (a crash loses at most this much) |
+| `recorder.max_queue` | 200000 | Above this backlog thread 1 drops recorder copies (counted, logged) instead of waiting |
 
 All files are read at start-up; restart the bot after a change (no rebuild needed).
 
@@ -263,6 +271,19 @@ Results, 15 Sep – 16 Oct 2026, CRUDEOILM Nov 5m, 1 lot, costs included:
 One month, one contract, in a strong uptrend (7,800 → 9,400): long-only benefits from that. AlphaTrend trades
 ~2 times a day against OBV MACD's ~6, which is what lets it beat costs. Test a non-trending period before
 going live. Live orders stay off.
+
+## Recorded market data
+
+Thread 6 writes one gzip JSON-lines file per instrument and IST day, one line per message:
+
+```
+{"rx":<our receive time, Unix ns>,"ev":"1502-json-full","d":{ ...the XTS payload exactly as sent... }}
+{"rx":...,"ev":"socket","d":"connected"}        socket status lines mark gaps in the data
+```
+
+Raw messages are kept unchanged so any order-flow rule (trade classification, footprint rows, imbalance
+ratios) can be recalculated later. Restarting on the same day appends to the same file. Read with
+`zcat data/raw/CRUDEOILM26NOVFUT/2026-10-19.jsonl.gz | head`.
 
 ## Redis
 

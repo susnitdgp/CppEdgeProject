@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <string_view>
 #include <variant>
 
@@ -53,6 +54,17 @@ struct OrderUpdate {
 };
 
 using EngineEvent = std::variant<Signal, OrderUpdate>;   // T3 + T5 -> T4
+
+struct RawEvent {                   // T1 -> T6 recorder: one market-data message as received
+  std::int64_t rx_ns;               // our receive time, Unix ns
+  std::string name;                 // XTS event name ("1501-json-full") or "socket"
+  std::string data;                 // JSON payload as sent, or a quoted socket status string
+};
+
+inline std::int64_t now_ns() {
+  using namespace std::chrono;
+  return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
+}
 
 inline OrderStatus parse_status(std::string_view s) {
   if (s == "New" || s == "Open") return OrderStatus::New;

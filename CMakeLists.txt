@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(CppEdge VERSION 0.8.0 LANGUAGES CXX)
+project(CppEdge VERSION 0.9.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,6 +17,7 @@ include(FetchContent)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(CURL REQUIRED)
+find_package(ZLIB REQUIRED)                   # recorder: gzip files
 find_library(HIREDIS_LIB hiredis REQUIRED)     # redis++_static does not carry it to the final link
 find_package(simdjson CONFIG QUIET)
 if(NOT simdjson_FOUND)
@@ -49,7 +50,7 @@ target_compile_definitions(cpp_edge PRIVATE EDGE_VERSION="${PROJECT_VERSION}")
 target_compile_options(cpp_edge PRIVATE -Wall -Wextra -Wpedantic $<$<CONFIG:Release>:-O3 -march=native>)
 target_link_libraries(cpp_edge PRIVATE
   ixwebsocket OpenSSL::SSL OpenSSL::Crypto CURL::libcurl
-  simdjson::simdjson quill::quill redis++_static ${HIREDIS_LIB} Threads::Threads)
+  simdjson::simdjson quill::quill redis++_static ${HIREDIS_LIB} ZLIB::ZLIB Threads::Threads)
 
 # ---- tools
 add_executable(rest_probe tools/rest_probe.cpp)

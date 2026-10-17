@@ -1,7 +1,8 @@
-// cpp_edge: five-thread XTS trading bot.
+// cpp_edge: six-thread XTS trading bot.
 //   T1 market data socket --Tick--> T2 candles --Candle--> T3 strategy --Signal--+
 //                                                                                v
 //   T5 interactive socket ------------------------OrderUpdate----------------> T4 order engine
+//   T1 --raw copies--> T6 recorder (daily gzip JSON-lines files; never blocks trading)
 // main logs in to Market Data once (T1's socket and T3's history calls share the session) and
 // reads today's Interactive session from Redis (T4 orders, T5 socket).
 // Usage: cpp_edge [config/config.json]   (load the Redis password first: see run.sh)
@@ -25,6 +26,7 @@
 #include "edge/threads/t3_strategy_runner.hpp"
 #include "edge/threads/t4_order_engine.hpp"
 #include "edge/threads/t5_order_updates.hpp"
+#include "edge/threads/t6_recorder.hpp"
 #include "edge/xts/session.hpp"
 
 namespace {
@@ -69,13 +71,15 @@ int main(int argc, char** argv) {
     Queue<Tick> ticks;
     Queue<Candle> candles;
     Queue<EngineEvent> engine;
+    Queue<RawEvent> raw;
     {
       // Consumers start first; jthreads stop and join in reverse order, so producers stop first.
       std::jthread t4{OrderEngineThread{cfg, ia, engine}};
       std::jthread t5{OrderUpdateThread{cfg, ia, engine}};
       std::jthread t3{StrategyThread{cfg, md, start_position, candles, engine}};
       std::jthread t2{CandleThread{cfg, ticks, candles}};
-      std::jthread t1{MarketDataThread{cfg, md, ticks}};
+      std::jthread t6{RecorderThread{cfg, raw}};  // stops after T1, so it drains T1's last records
+      std::jthread t1{MarketDataThread{cfg, md, ticks, raw}};
       while (!g_stop.load()) std::this_thread::sleep_for(200ms);
       ELOG_INFO("shutdown requested");
     }

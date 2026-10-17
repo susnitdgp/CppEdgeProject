@@ -15,6 +15,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <format>
 #include <functional>
 #include <mutex>
 #include <stop_token>
@@ -31,12 +32,13 @@ class SocketIoClient {
  public:
   using EventFn = std::function<void(std::string_view name, std::string_view data)>;
   using ConnectFn = std::function<void()>;
+  using StatusFn = std::function<void(std::string_view status)>;  // optional: open / connected / closed / error
 
   // target: path + query, e.g. "/apimarketdata/socket.io/?token=..&EIO=3&transport=websocket".
   SocketIoClient(std::string label, const std::string& host, const std::string& target,
-                 const Config::Engine::Socket& o, EventFn on_event, ConnectFn on_connect)
+                 const Config::Engine::Socket& o, EventFn on_event, ConnectFn on_connect, StatusFn on_status = {})
       : label_(std::move(label)), on_event_(std::move(on_event)), on_connect_(std::move(on_connect)),
-        tick_(o.watchdog_tick_ms) {
+        on_status_(std::move(on_status)), tick_(o.watchdog_tick_ms) {
     ix::initNetSystem();
     ws_.setUrl("wss://" + host + target);
     ws_.disablePerMessageDeflate();
@@ -93,15 +95,18 @@ class SocketIoClient {
       case ix::WebSocketMessageType::Open:
         last_rx_.store(steady_ms());
         ELOG_INFO("{} socket upgraded", label_);
+        status("open");
         break;
       case ix::WebSocketMessageType::Close:
         open_.store(false);
         ELOG_WARN("{} socket closed: {} {}", label_, m->closeInfo.code, m->closeInfo.reason);
+        status(std::format("closed {} {}", m->closeInfo.code, m->closeInfo.reason));
         break;
       case ix::WebSocketMessageType::Error:
         open_.store(false);
         ELOG_WARN("{} socket error: {} (retry {}, HTTP {})", label_, m->errorInfo.reason, m->errorInfo.retries,
                   m->errorInfo.http_status);
+        status("error " + m->errorInfo.reason);
         break;
       default:  // Ping / Pong / Fragment
         break;
@@ -128,6 +133,7 @@ class SocketIoClient {
           dispatch(f.substr(2));
         } else if (sio == '0') {
           ELOG_INFO("{} socket connected", label_);
+          status("connected");
           on_connect_();
         } else if (sio == '1') {
           ELOG_WARN("{} server disconnected the socket", label_);
@@ -141,6 +147,10 @@ class SocketIoClient {
       default:  // '3' pong: last_rx_ is already refreshed
         break;
     }
+  }
+
+  void status(std::string_view s) {
+    if (on_status_) on_status_(s);
   }
 
   // payload: ["event-name", data]; XTS sends data as a JSON string (unescaped here) or an object.
@@ -158,6 +168,7 @@ class SocketIoClient {
   std::string label_;
   EventFn on_event_;
   ConnectFn on_connect_;
+  StatusFn on_status_;
   const std::chrono::milliseconds tick_;
   JsonReader json_;  // IXWebSocket thread only
   std::atomic<bool> open_{false};

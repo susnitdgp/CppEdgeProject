@@ -19,5 +19,17 @@
     "reconnect_min_ms": 1000,
     "reconnect_max_ms": 30000,
     "watchdog_tick_ms": 250
+  },
+  "recorder": {
+    "enabled": true,
+    "dir": "data/raw",
+    "feeds": [
+      1501,
+      1502,
+      1505,
+      1510
+    ],
+    "flush_interval_ms": 2000,
+    "max_queue": 200000
   }
 }
