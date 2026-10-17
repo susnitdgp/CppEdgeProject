@@ -18,8 +18,8 @@
 #include <string>
 #include <string_view>
 
-#include "edge/json.hpp"
-#include "edge/log.hpp"
+#include "edge/core/json.hpp"
+#include "edge/core/log.hpp"
 
 namespace edge {
 

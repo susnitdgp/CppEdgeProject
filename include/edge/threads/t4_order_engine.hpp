@@ -10,13 +10,13 @@
 #include <stop_token>
 #include <variant>
 
-#include "edge/config.hpp"
-#include "edge/json.hpp"
-#include "edge/log.hpp"
-#include "edge/redis_store.hpp"
-#include "edge/rest_client.hpp"
-#include "edge/types.hpp"
-#include "edge/xts.hpp"
+#include "edge/core/config.hpp"
+#include "edge/core/json.hpp"
+#include "edge/core/log.hpp"
+#include "edge/store/redis_store.hpp"
+#include "edge/net/rest_client.hpp"
+#include "edge/core/types.hpp"
+#include "edge/xts/session.hpp"
 
 namespace edge {
 

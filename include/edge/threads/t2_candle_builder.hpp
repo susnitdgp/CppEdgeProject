@@ -5,9 +5,9 @@
 // market is quiet. The first bar after start-up is partial and is not emitted.
 #include <stop_token>
 
-#include "edge/config.hpp"
-#include "edge/log.hpp"
-#include "edge/types.hpp"
+#include "edge/core/config.hpp"
+#include "edge/core/log.hpp"
+#include "edge/core/types.hpp"
 
 namespace edge {
 

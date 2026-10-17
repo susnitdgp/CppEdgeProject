@@ -11,15 +11,15 @@
 #include <cstdio>
 #include <thread>
 
-#include "edge/candle_thread.hpp"
-#include "edge/config.hpp"
-#include "edge/log.hpp"
-#include "edge/market_data_thread.hpp"
-#include "edge/order_engine_thread.hpp"
-#include "edge/order_update_thread.hpp"
-#include "edge/strategy_thread.hpp"
-#include "edge/types.hpp"
-#include "edge/xts.hpp"
+#include "edge/threads/t2_candle_builder.hpp"
+#include "edge/core/config.hpp"
+#include "edge/core/log.hpp"
+#include "edge/threads/t1_market_data.hpp"
+#include "edge/threads/t4_order_engine.hpp"
+#include "edge/threads/t5_order_updates.hpp"
+#include "edge/threads/t3_strategy_runner.hpp"
+#include "edge/core/types.hpp"
+#include "edge/xts/session.hpp"
 
 namespace {
 std::atomic<bool> g_stop{false};

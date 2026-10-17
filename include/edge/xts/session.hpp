@@ -7,10 +7,10 @@
 #include <stdexcept>
 #include <string>
 
-#include "edge/config.hpp"
-#include "edge/json.hpp"
-#include "edge/redis_store.hpp"
-#include "edge/rest_client.hpp"
+#include "edge/core/config.hpp"
+#include "edge/core/json.hpp"
+#include "edge/store/redis_store.hpp"
+#include "edge/net/rest_client.hpp"
 
 namespace edge {
 

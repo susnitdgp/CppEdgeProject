@@ -12,7 +12,7 @@
 #include <string_view>
 #include <utility>
 
-#include "edge/config.hpp"
+#include "edge/core/config.hpp"
 
 namespace edge {
 

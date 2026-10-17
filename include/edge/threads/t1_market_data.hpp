@@ -5,12 +5,12 @@
 #include <format>
 #include <stop_token>
 
-#include "edge/config.hpp"
-#include "edge/json.hpp"
-#include "edge/log.hpp"
-#include "edge/socketio_client.hpp"
-#include "edge/types.hpp"
-#include "edge/xts.hpp"
+#include "edge/core/config.hpp"
+#include "edge/core/json.hpp"
+#include "edge/core/log.hpp"
+#include "edge/net/socketio_client.hpp"
+#include "edge/core/types.hpp"
+#include "edge/xts/session.hpp"
 
 namespace edge {
 
