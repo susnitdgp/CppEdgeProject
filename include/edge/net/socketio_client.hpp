@@ -1,9 +1,11 @@
 #pragma once
 // Socket.IO v2 (Engine.IO v3) client over IXWebSocket (WSS), as XTS speaks it.
-// Engine.IO: '0' open {pingInterval,pingTimeout}, '2' ping (client sends), '3' pong, '4' message.
+// Engine.IO: '0' open {pingInterval,pingTimeout}, '2' ping, '3' pong, '4' message.
+//   The client pings every pingInterval; XTS also pings the client (Interactive does, ~10 s
+//   timeout) and drops the socket unless each '2' is answered with '3'.
 // Socket.IO inside '4': '0' connect, '1' disconnect, '2' event ["name", data], '4' error.
 // IXWebSocket reads on its own internal thread and calls on_event/on_connect from there.
-// run() blocks the calling thread, which owns the Engine.IO ping and the dead-link watchdog;
+// run() blocks the calling thread, which owns the client ping and the dead-link watchdog;
 // IXWebSocket reconnects automatically (1s..30s backoff) until stop is requested.
 #include <ixwebsocket/IXNetSystem.h>
 #include <ixwebsocket/IXWebSocket.h>
@@ -31,23 +33,21 @@ class SocketIoClient {
   // target: path + query, e.g. "/apimarketdata/socket.io/?token=..&EIO=3&transport=websocket".
   SocketIoClient(std::string label, const std::string& host, const std::string& target, EventFn on_event,
                  ConnectFn on_connect)
-      : label_(std::move(label)), url_("wss://" + host + target), on_event_(std::move(on_event)),
-        on_connect_(std::move(on_connect)) {}
-
-  void run(std::stop_token st) {
+      : label_(std::move(label)), on_event_(std::move(on_event)), on_connect_(std::move(on_connect)) {
     ix::initNetSystem();
-    ix::WebSocket ws;
-    ws.setUrl(url_);
-    ws.disablePerMessageDeflate();
-    ws.enableAutomaticReconnection();
-    ws.setMinWaitBetweenReconnectionRetries(1000);
-    ws.setMaxWaitBetweenReconnectionRetries(30000);
+    ws_.setUrl("wss://" + host + target);
+    ws_.disablePerMessageDeflate();
+    ws_.enableAutomaticReconnection();
+    ws_.setMinWaitBetweenReconnectionRetries(1000);
+    ws_.setMaxWaitBetweenReconnectionRetries(30000);
     ix::SocketTLSOptions tls;
     tls.caFile = "SYSTEM";
-    ws.setTLSOptions(tls);
-    ws.setOnMessageCallback([this](const ix::WebSocketMessagePtr& m) { on_message(m); });
-    ws.start();
+    ws_.setTLSOptions(tls);
+    ws_.setOnMessageCallback([this](const ix::WebSocketMessagePtr& m) { on_message(m); });
+  }
 
+  void run(std::stop_token st) {
+    ws_.start();
     std::mutex m;
     std::condition_variable_any cv;
     while (!st.stop_requested()) {
@@ -60,13 +60,13 @@ class SocketIoClient {
       if (now - last_rx_.load() > ping_every_.load() + ping_timeout_.load()) {
         ELOG_WARN("{} socket silent for pingInterval + pingTimeout; dropping", label_);
         open_.store(false);
-        ws.close();  // automatic reconnection takes over
+        ws_.close();  // automatic reconnection takes over
       } else if (now >= next_ping_.load()) {
-        ws.sendText("2");
+        ws_.sendText("2");
         next_ping_.store(now + ping_every_.load());
       }
     }
-    ws.stop();
+    ws_.stop();
     ELOG_INFO("{} socket stopped", label_);
   }
 
@@ -117,6 +117,9 @@ class SocketIoClient {
         open_.store(true);
         break;
       }
+      case '2':  // server ping: answer with pong + same payload
+        ws_.sendText("3" + std::string(f.substr(1)));
+        break;
       case '4':
         if (sio == '2') {
           dispatch(f.substr(2));
@@ -149,12 +152,13 @@ class SocketIoClient {
     on_event_(name, data);
   }
 
-  std::string label_, url_;
+  std::string label_;
   EventFn on_event_;
   ConnectFn on_connect_;
   JsonReader json_;  // IXWebSocket thread only
   std::atomic<bool> open_{false};
   std::atomic<std::int64_t> last_rx_{0}, next_ping_{0}, ping_every_{25000}, ping_timeout_{20000};
+  ix::WebSocket ws_;  // last: destroyed first, so its thread never sees the members above destroyed
 };
 
 }  // namespace edge
