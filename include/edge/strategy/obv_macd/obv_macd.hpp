@@ -1,5 +1,5 @@
 #pragma once
-// OBV MACD v1.0 — port of TradingView "OBV MACD Indicator" (Pine v4) with MA type DEMA.
+// OBV MACD v1.2 — port of TradingView "OBV MACD Indicator" (Pine v4) with MA type DEMA.
 //  1. OBV        v = cum(sign(change(close)) * volume)
 //  2. shadow   = (v - sma(v, v_len)) / stdev(v - sma, window_len) * stdev(high - low, window_len)
 //     out      = shadow > 0 ? high + shadow : low + shadow;   obvema = ema(out, obv_len)
@@ -8,20 +8,21 @@
 //  5. T-Channel (Alex Grover): a = cum(|tt1 - b5[1]|) / bar_index * channel_mult;
 //     b5 steps to tt1 when tt1 leaves b5[1] +/- a, else holds; oc = direction of b5's last step
 //  6. oc turns up (blue cross) -> Cross::Up; turns down (red cross) -> Cross::Down
-// Pine semantics kept: ema() is seeded with the SMA of its first `len` values; stdev() is the
-// population stdev; cum() skips na; division by zero gives na. The pivot/divergence labels are
-// display-only and not ported; the other MA types (TEMA, HMA, ZLEMA...) are unused at DEMA.
+// Settings: config/strategies/obv_macd.json "indicator" (from_json). Pine semantics come from pine.hpp. The pivot/divergence labels are display-only and not ported;
+// the other MA types (TEMA, HMA, ZLEMA...) are unused at DEMA.
 // The T-Channel threshold averages over EVERY bar since the first one fed, so values depend on how
 // much history is loaded: the strategy thread warms up on history_days of XTS bars.
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <format>
-#include <limits>
 #include <stdexcept>
+#include <memory>
 #include <string>
-#include <vector>
 
+#include <simdjson.h>
+
+#include "edge/strategy/pine.hpp"
 #include "edge/strategy/strategy.hpp"
 
 namespace edge {
@@ -31,75 +32,18 @@ struct ObvMacdParams {
   double channel_mult;
 };
 
-namespace pine {
-
-inline constexpr double kNa = std::numeric_limits<double>::quiet_NaN();
-inline bool na(double x) { return std::isnan(x); }
-inline double div(double a, double b) { return b == 0.0 ? kNa : a / b; }
-
-// The last n values of a series; complete() once n values are in and none of them is na.
-class Window {
- public:
-  explicit Window(std::int64_t n) : buf_(static_cast<std::size_t>(n), kNa) {
-    if (n < 1) throw std::invalid_argument("window length must be >= 1");
-  }
-
-  void push(double x) {
-    if (count_ == buf_.size()) {
-      if (na(buf_[pos_])) --nans_;
-    } else {
-      ++count_;
-    }
-    buf_[pos_] = x;
-    if (na(x)) ++nans_;
-    pos_ = (pos_ + 1) % buf_.size();
-  }
-
-  bool complete() const { return count_ == buf_.size() && nans_ == 0; }
-  double at(std::size_t bars_ago) const { return buf_[(pos_ + buf_.size() - 1 - bars_ago) % buf_.size()]; }
-
-  double mean() const {
-    double s = 0;
-    for (double x : buf_) s += x;
-    return s / static_cast<double>(buf_.size());
-  }
-
-  double stdev() const {  // population, like Pine's stdev()
-    const double m = mean();
-    double s = 0;
-    for (double x : buf_) s += (x - m) * (x - m);
-    return std::sqrt(s / static_cast<double>(buf_.size()));
-  }
-
- private:
-  std::vector<double> buf_;
-  std::size_t pos_ = 0, count_ = 0, nans_ = 0;
-};
-
-// Pine ema(): seeded with the SMA of the first `len` values, then alpha * x + (1 - alpha) * prev.
-class Ema {
- public:
-  explicit Ema(std::int64_t len) : alpha_(2.0 / static_cast<double>(len + 1)), seed_(len) {}
-
-  double update(double x) {
-    seed_.push(x);
-    if (!na(value_) && !na(x)) return value_ = alpha_ * x + (1 - alpha_) * value_;
-    return value_ = seed_.complete() ? seed_.mean() : kNa;
-  }
-
- private:
-  double alpha_;
-  Window seed_;
-  double value_ = kNa;
-};
-
-}  // namespace pine
-
 class ObvMacd final : public Strategy {
  public:
+  static std::unique_ptr<Strategy> from_json(simdjson::dom::element in) {
+    return std::make_unique<ObvMacd>(ObvMacdParams{
+        int64_t(in["window_len"]), int64_t(in["v_len"]), int64_t(in["obv_len"]), int64_t(in["ma_len"]),
+        int64_t(in["slow_len"]), int64_t(in["reg_len"]), double(in["channel_mult"])});
+  }
+
   explicit ObvMacd(const ObvMacdParams& p)
-      : p_(p), v_win_(p.v_len), dev_win_(p.window_len), range_win_(p.window_len), obv_ema_(p.obv_len),
-        ma1_(p.ma_len), ma2_(p.ma_len), slow_(p.slow_len), macd_win_(p.reg_len) {
+      : p_(p), v_win_(p.v_len), dev_win_(p.window_len), range_win_(p.window_len),
+        obv_ema_(pine::Ema::ema(p.obv_len)), ma1_(pine::Ema::ema(p.ma_len)), ma2_(pine::Ema::ema(p.ma_len)),
+        slow_(pine::Ema::ema(p.slow_len)), macd_win_(p.reg_len) {
     if (p.reg_len < 2) throw std::invalid_argument("obv_macd: reg_len must be >= 2");
   }
 
@@ -112,12 +56,10 @@ class ObvMacd final : public Strategy {
     }
     prev_close_ = c.close;
     v_win_.push(v_);
-    const double smooth = v_win_.complete() ? v_win_.mean() : kNa;
+    const double smooth = v_win_.mean();
     dev_win_.push(v_ - smooth);
     range_win_.push(c.high - c.low);
-    const double v_spread = dev_win_.complete() ? dev_win_.stdev() : kNa;
-    const double price_spread = range_win_.complete() ? range_win_.stdev() : kNa;
-    const double shadow = div(v_ - smooth, v_spread) * price_spread;
+    const double shadow = div(v_ - smooth, dev_win_.stdev()) * range_win_.stdev();
     const double out = na(shadow) ? kNa : shadow > 0 ? c.high + shadow : c.low + shadow;
 
     // 3. MACD: DEMA of the OBV line minus EMA of close

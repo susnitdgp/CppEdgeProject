@@ -27,7 +27,7 @@ Load it in a shell with
 - `net/` — transports: `rest_client.hpp` (libcurl), `socketio_client.hpp` (Socket.IO over IXWebSocket)
 - `xts/` — XTS specifics: `session.hpp` (logins, socket URLs), `history.hpp` (OHLC history for warm-up and backtest)
 - `store/` — `redis_store.hpp` (credentials in, bot state out)
-- `strategy/` — `strategy.hpp` (interface), one header per strategy (`obv_macd.hpp`), `session.hpp` (calendar), `trade_rules.hpp` (cross + session -> target, shared with the backtest), `factory.hpp` (name -> strategy)
+- `strategy/` — framework: `strategy.hpp` (interface), `pine.hpp` (Pine building blocks), `session.hpp` (calendar), `trade_rules.hpp` (cross + session -> target, shared with the backtest), `factory.hpp` (name -> strategy); each strategy in its own folder `strategy/<name>/<name>.hpp` (`alpha_trend/`, `obv_macd/`) with settings in `config/strategies/<name>.json`
 - `threads/` — one header per thread, numbered as above: `t1_market_data`, `t2_candle_builder`, `t3_strategy_runner`, `t4_order_engine`, `t5_order_updates`
 - `src/main.cpp` — wires the queues and starts the five threads
 - `tools/` — `backtest.cpp` (same strategy + trade rules as the bot), `rest_probe.cpp`

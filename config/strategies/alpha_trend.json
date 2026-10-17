@@ -1,0 +1,12 @@
+{
+  "indicator": {
+    "coeff": 1.0,
+    "period": 14,
+    "use_rsi": false
+  },
+  "trade": {
+    "allow_long": true,
+    "allow_short": false
+  },
+  "history_days": 30
+}

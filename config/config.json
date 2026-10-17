@@ -16,7 +16,7 @@
     "protect_points": 10
   },
   "candle": { "timeframe_minutes": 5 },
-  "strategy": { "name": "obv_macd", "params_file": "strategies/obv_macd.json" },
+  "strategy": { "name": "alpha_trend", "params_file": "strategies/alpha_trend.json" },
   "session_file": "session-mcx.json",
   "redis": {
     "host": "127.0.0.1",

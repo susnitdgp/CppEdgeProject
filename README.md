@@ -3,7 +3,8 @@
 A multithreaded C++20 algorithmic trading bot for the Symphony **XTS** APIs (CompositeEdge), starting with
 **CRUDEOILM26NOVFUT** (MCX, ExchangeInstrumentID 573423), 1 lot, MIS.
 
-Current version: **0.7.0** (see `CMakeLists.txt`). Strategy: **OBV MACD** (port of the TradingView indicator).
+Current version: **0.8.0** (see `CMakeLists.txt`). Active strategy: **AlphaTrend** (set in `config/config.json`);
+**OBV MACD** is also available. Both are ports of TradingView indicators.
 
 ## How it works
 
@@ -33,9 +34,32 @@ Five threads, one job each, connected by lock-free moodycamel queues:
 
 `main` logs in to Market Data once; T1's socket and T3's history calls share that session.
 
-### Strategy: OBV MACD
+### Strategies
 
-Port of the TradingView "OBV MACD Indicator" (Pine v4), MA type DEMA, in `strategy/obv_macd.hpp`:
+Each strategy lives in its own folder, `strategy/<name>/<name>.hpp`, builds itself from the `indicator` section
+of `config/strategies/<name>.json` (`from_json`), and reports **Up** / **Down** crosses. Shared Pine building blocks
+(EMA/RMA, WMA, stdev, sums with TradingView's na rules) are in `strategy/pine.hpp`. `config.json` picks the strategy:
+`"strategy": {"name": "alpha_trend", "params_file": "strategies/alpha_trend.json"}`.
+
+Adding a strategy: create `strategy/<name>/<name>.hpp` (a `Strategy` with a static `from_json`), add
+`config/strategies/<name>.json`, and add one line to `kStrategies` in `strategy/factory.hpp`.
+
+#### AlphaTrend (`strategy/alpha_trend/alpha_trend.hpp`)
+
+Port of KivancOzbilgic's "AlphaTrend" (Pine v5):
+
+1. ATR = Hull MA of true range (`period` 14)
+2. Momentum: MFI(hlc3, 14) ≥ 50 is bullish (`use_rsi`: RSI(close, 14) instead, for data without volume)
+3. The AlphaTrend line ratchets: bullish → `low − ATR × coeff`, only ever up; bearish → `high + ATR × coeff`,
+   only ever down
+4. **BUY** (Up) when the line crosses above its value 2 bars ago, **SELL** (Down) when it crosses below;
+   BUY and SELL alternate, as the chart labels do
+
+It only remembers a short window, so after warm-up its signals should match TradingView on the same contract.
+
+#### OBV MACD (`strategy/obv_macd/obv_macd.hpp`)
+
+Port of the TradingView "OBV MACD Indicator" (Pine v4), MA type DEMA:
 
 1. OBV (`cum(sign(change(close)) × volume)`), its deviation from a 14-bar SMA rescaled into price points
    → a price-like OBV line
@@ -81,12 +105,14 @@ include/edge/
 ├── net/       rest_client.hpp (libcurl) · socketio_client.hpp (Socket.IO over IXWebSocket)
 ├── xts/       session.hpp (logins, socket URLs) · history.hpp (OHLC history)
 ├── store/     redis_store.hpp (credentials in, bot state out)
-├── strategy/  strategy.hpp (interface) · obv_macd.hpp · session.hpp (calendar) · trade_rules.hpp · factory.hpp
+├── strategy/  strategy.hpp (interface) · pine.hpp · session.hpp (calendar) · trade_rules.hpp · factory.hpp
+│   ├── alpha_trend/alpha_trend.hpp
+│   └── obv_macd/obv_macd.hpp
 └── threads/   t1_market_data · t2_candle_builder · t3_strategy_runner · t4_order_engine · t5_order_updates
 src/main.cpp                    wires the queues and starts the five threads
 config/config.json              what to trade and where; names the strategy and session files
 config/engine-config.json       how the engine runs (intervals, timeouts, backoff)
-config/strategies/obv_macd.json strategy settings, long/short switches, warm-up days
+config/strategies/<name>.json   per-strategy settings, long/short switches, warm-up days
 config/session-mcx.json         MCX calendar + entry / square-off rules
 config/backtest.json            backtest data range, costs, outputs
 utility/xts_ia_login.sh         daily Interactive login -> Redis
@@ -150,12 +176,22 @@ in with the same Market Data keys as the Rust XTS bot, so do not run them at the
 | `xts` | `host`, `client_id`, `live_orders_enabled` |
 | `instrument` | `symbol`, `exchange_instrument_id`, `segment_code`, `segment`, `product`, `lots`, `qty_per_lot` (MCX 1, NIFTY 65), `tick_size`, `protect_points` |
 | `candle` | `timeframe_minutes` |
-| `strategy` | `name` (`obv_macd`), `params_file` (relative to `config/`) |
+| `strategy` | `name` (`alpha_trend` or `obv_macd`), `params_file` (relative to `config/`) |
 | `session_file` | the session calendar (relative to `config/`) |
 | `redis` | `host`, `port`, `db`, `password_env`, the credential key names, `state_prefix` |
 | `logging` | `dir`, `level` |
 
-### `config/strategies/obv_macd.json` — strategy
+### `config/strategies/alpha_trend.json` — AlphaTrend
+
+| Field | Default | Meaning |
+|---|---|---|
+| `indicator.coeff` | 1.0 | ATR multiplier for the line's distance from price |
+| `indicator.period` | 14 | ATR (Hull) and MFI/RSI period |
+| `indicator.use_rsi` | false | RSI instead of MFI (for data without volume) |
+| `trade.allow_long` / `allow_short` | true / false | which sides are traded |
+| `history_days` | 30 | XTS history fed at start-up (warm-up) |
+
+### `config/strategies/obv_macd.json` — OBV MACD
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -213,9 +249,20 @@ Fills are at the deciding bar's close ± slippage (the bot sends a marketable li
 
 Results go to `backtest_results/` (not committed).
 
-First result (15 Sep – 16 Oct 2026, 1 lot, costs included): long only 194 trades, +639 gross points,
-**−₹7,190 net** (profit factor 0.81); short only and both sides lose more. About 6 trades a day at ~3 points
-gross per trade do not cover ~7 points of costs. Live orders stay off.
+Results, 15 Sep – 16 Oct 2026, CRUDEOILM Nov 5m, 1 lot, costs included:
+
+| Strategy | Mode | Trades | Win % | Gross pts | Net ₹ | Profit factor | Max DD ₹ |
+|---|---|---|---|---|---|---|---|
+| AlphaTrend | long | 51 | 39.2 | +788 | **+4,310** | 1.28 | 4,060 |
+| AlphaTrend | short | 54 | 25.9 | −433 | −8,110 | 0.61 | 10,130 |
+| AlphaTrend | both | 105 | 32.4 | +355 | −3,800 | 0.89 | 8,350 |
+| OBV MACD | long | 194 | 39.7 | +639 | −7,190 | 0.81 | 11,530 |
+| OBV MACD | short | 192 | 27.1 | −695 | −20,390 | 0.51 | 20,390 |
+| OBV MACD | both | 386 | 33.4 | −56 | −27,580 | 0.65 | 30,220 |
+
+One month, one contract, in a strong uptrend (7,800 → 9,400): long-only benefits from that. AlphaTrend trades
+~2 times a day against OBV MACD's ~6, which is what lets it beat costs. Test a non-trending period before
+going live. Live orders stay off.
 
 ## Redis
 
@@ -261,11 +308,11 @@ The Redis password lives only in `~/.config/xts-nautilas/redis.env` (mode 600) a
 ## Status
 
 Working: both logins, both sockets, 1501 subscription, order-update socket, REST client, position
-reconciliation, history warm-up, OBV MACD strategy, session rules, backtest. Not yet tested with live MCX ticks
+reconciliation, history warm-up, AlphaTrend and OBV MACD strategies, session rules, backtest. Not yet tested with live MCX ticks
 (built on a weekend) or live orders.
 
 Next:
-- tune the strategy in the backtest until it beats costs (timeframe, `channel_mult`, MA lengths)
-- confirm the port against TradingView on the same contract (CRUDEOILM Nov, 5m)
+- backtest AlphaTrend on a non-trending period / another contract before live orders
+- confirm the ports against TradingView on the same contract (CRUDEOILM Nov, 5m)
 - limit price from the live quote instead of the bar close
 - order-book reconciliation after an Interactive socket reconnect
