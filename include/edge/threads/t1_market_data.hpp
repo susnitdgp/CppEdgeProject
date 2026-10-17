@@ -25,12 +25,12 @@ class MarketDataThread {
     set_thread_name("edge-md");
     try {
       RedisStore redis(cfg_.redis);
-      RestClient http(cfg_.xts.md_base());
+      RestClient http(cfg_.xts.md_base(), cfg_.engine.rest);
       const auto session = md_login(http, redis, cfg_.redis);
       http.set_token(session.token);
       ELOG_INFO("market data session up for {}", session.user_id);
       SocketIoClient socket(
-          "md", cfg_.xts.host, md_socket_target(session),
+          "md", cfg_.xts.host, md_socket_target(session), cfg_.engine.socket,
           [this](std::string_view name, std::string_view data) { on_event(name, data); },
           [this, &http] { subscribe(http); });
       socket.run(st);

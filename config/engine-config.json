@@ -1,0 +1,23 @@
+{
+  "queue_poll_ms": 100,
+  "candle": {
+    "close_grace_ms": 1500
+  },
+  "order_engine": {
+    "reconcile_interval_ms": 30000,
+    "stale_order_ms": 60000
+  },
+  "rest": {
+    "connect_timeout_ms": 3000,
+    "request_timeout_ms": 5000,
+    "tcp_keepidle_s": 30,
+    "tcp_keepintvl_s": 10,
+    "max_conn_age_s": 3600,
+    "dns_cache_s": 3600
+  },
+  "socket": {
+    "reconnect_min_ms": 1000,
+    "reconnect_max_ms": 30000,
+    "watchdog_tick_ms": 250
+  }
+}

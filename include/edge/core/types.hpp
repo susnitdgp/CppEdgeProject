@@ -16,7 +16,6 @@ namespace edge {
 template <class T>
 using Queue = moodycamel::BlockingConcurrentQueue<T>;
 
-inline constexpr auto kPollTimeout = std::chrono::milliseconds(100);
 
 struct Tick {                       // one trade (TotalTradedQuantity moved)
   std::int64_t instrument_id;

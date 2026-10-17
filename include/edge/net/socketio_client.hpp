@@ -5,8 +5,9 @@
 //   timeout) and drops the socket unless each '2' is answered with '3'.
 // Socket.IO inside '4': '0' connect, '1' disconnect, '2' event ["name", data], '4' error.
 // IXWebSocket reads on its own internal thread and calls on_event/on_connect from there.
-// run() blocks the calling thread, which owns the client ping and the dead-link watchdog;
-// IXWebSocket reconnects automatically (1s..30s backoff) until stop is requested.
+// run() blocks the calling thread, which owns the client ping and the dead-link watchdog (checked
+// every watchdog_tick_ms); IXWebSocket reconnects automatically (reconnect_min_ms..reconnect_max_ms
+// backoff) until stop is requested. Tuning comes from engine-config.json "socket".
 #include <ixwebsocket/IXNetSystem.h>
 #include <ixwebsocket/IXWebSocket.h>
 
@@ -20,6 +21,7 @@
 #include <string>
 #include <string_view>
 
+#include "edge/core/config.hpp"
 #include "edge/core/json.hpp"
 #include "edge/core/log.hpp"
 
@@ -31,15 +33,16 @@ class SocketIoClient {
   using ConnectFn = std::function<void()>;
 
   // target: path + query, e.g. "/apimarketdata/socket.io/?token=..&EIO=3&transport=websocket".
-  SocketIoClient(std::string label, const std::string& host, const std::string& target, EventFn on_event,
-                 ConnectFn on_connect)
-      : label_(std::move(label)), on_event_(std::move(on_event)), on_connect_(std::move(on_connect)) {
+  SocketIoClient(std::string label, const std::string& host, const std::string& target,
+                 const Config::Engine::Socket& o, EventFn on_event, ConnectFn on_connect)
+      : label_(std::move(label)), on_event_(std::move(on_event)), on_connect_(std::move(on_connect)),
+        tick_(o.watchdog_tick_ms) {
     ix::initNetSystem();
     ws_.setUrl("wss://" + host + target);
     ws_.disablePerMessageDeflate();
     ws_.enableAutomaticReconnection();
-    ws_.setMinWaitBetweenReconnectionRetries(1000);
-    ws_.setMaxWaitBetweenReconnectionRetries(30000);
+    ws_.setMinWaitBetweenReconnectionRetries(static_cast<uint32_t>(o.reconnect_min_ms));
+    ws_.setMaxWaitBetweenReconnectionRetries(static_cast<uint32_t>(o.reconnect_max_ms));
     ix::SocketTLSOptions tls;
     tls.caFile = "SYSTEM";
     ws_.setTLSOptions(tls);
@@ -53,7 +56,7 @@ class SocketIoClient {
     while (!st.stop_requested()) {
       {
         std::unique_lock lk(m);
-        cv.wait_for(lk, st, std::chrono::milliseconds(250), [] { return false; });
+        cv.wait_for(lk, st, tick_, [] { return false; });
       }
       if (st.stop_requested() || !open_.load()) continue;
       const auto now = steady_ms();
@@ -155,6 +158,7 @@ class SocketIoClient {
   std::string label_;
   EventFn on_event_;
   ConnectFn on_connect_;
+  const std::chrono::milliseconds tick_;
   JsonReader json_;  // IXWebSocket thread only
   std::atomic<bool> open_{false};
   std::atomic<std::int64_t> last_rx_{0}, next_ping_{0}, ping_every_{25000}, ping_timeout_{20000};

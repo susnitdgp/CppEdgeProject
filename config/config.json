@@ -11,10 +11,11 @@
     "segment": "MCXFO",
     "product": "MIS",
     "lots": 1,
+    "qty_per_lot": 1,
     "tick_size": 1.0,
     "protect_points": 10
   },
-  "candle": { "timeframe_minutes": 5, "close_grace_ms": 1500 },
+  "candle": { "timeframe_minutes": 5 },
   "strategy": { "name": "ema_cross", "fast": 9, "slow": 21 },
   "redis": {
     "host": "127.0.0.1",

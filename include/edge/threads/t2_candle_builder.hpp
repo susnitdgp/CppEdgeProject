@@ -1,9 +1,13 @@
 #pragma once
-// Thread 2: Tick queue -> N-minute candles (3/5m from config) -> Candle queue.
+// Thread 2: Tick queue -> N-minute candles (config.json candle.timeframe_minutes) -> Candle queue.
 // Buckets on exchange time (IST 09:00 is a multiple of 3 and 5 minutes, so Unix-ms flooring aligns).
-// A bar closes on the first tick of the next bucket, or by wall clock after close_grace_ms when the
-// market is quiet. The first bar after start-up is partial and is not emitted.
+// A bar closes on the first tick of the next bucket, or by wall clock after close_grace_ms
+// (engine-config.json) when the market is quiet. The first bar after start-up is partial and is
+// not emitted.
+#include <algorithm>
+#include <chrono>
 #include <stop_token>
+#include <utility>
 
 #include "edge/core/config.hpp"
 #include "edge/core/log.hpp"
@@ -14,13 +18,14 @@ namespace edge {
 class CandleThread {
  public:
   CandleThread(const Config& cfg, Queue<Tick>& in, Queue<Candle>& out)
-      : tf_ms_(cfg.candle.timeframe_minutes * 60'000), grace_ms_(cfg.candle.close_grace_ms), in_(in), out_(out) {}
+      : tf_ms_(cfg.candle.timeframe_minutes * 60'000), grace_ms_(cfg.engine.candle.close_grace_ms),
+        poll_(cfg.engine.queue_poll()), in_(in), out_(out) {}
 
   void operator()(std::stop_token st) {
     set_thread_name("edge-candle");
     Tick t;
     while (!st.stop_requested()) {
-      if (in_.wait_dequeue_timed(t, kPollTimeout)) on_tick(t);
+      if (in_.wait_dequeue_timed(t, poll_)) on_tick(t);
       if (open_ && now_ms() >= bar_.open_ts_ms + tf_ms_ + grace_ms_) close_bar();
     }
   }
@@ -57,6 +62,7 @@ class CandleThread {
   }
 
   const std::int64_t tf_ms_, grace_ms_;
+  const std::chrono::milliseconds poll_;
   Queue<Tick>& in_;
   Queue<Candle>& out_;
   Candle bar_{};

@@ -25,7 +25,7 @@ class OrderUpdateThread {
       RedisStore redis(cfg_.redis);
       redis_ = &redis;
       SocketIoClient socket(
-          "interactive", cfg_.xts.host, ia_socket_target(ia_),
+          "interactive", cfg_.xts.host, ia_socket_target(ia_), cfg_.engine.socket,
           [this](std::string_view name, std::string_view data) { on_event(name, data); },
           [] {});
       socket.run(st);
