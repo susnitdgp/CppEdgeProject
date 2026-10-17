@@ -1,0 +1,31 @@
+{
+  "xts": {
+    "host": "xts.compositedge.com",
+    "client_id": "WBS18",
+    "live_orders_enabled": false
+  },
+  "instrument": {
+    "symbol": "CRUDEOILM26NOVFUT",
+    "exchange_instrument_id": 573423,
+    "segment_code": 51,
+    "segment": "MCXFO",
+    "product": "MIS",
+    "lots": 1,
+    "tick_size": 1.0,
+    "protect_points": 10
+  },
+  "candle": { "timeframe_minutes": 5, "close_grace_ms": 1500 },
+  "strategy": { "name": "ema_cross", "fast": 9, "slow": 21 },
+  "redis": {
+    "host": "127.0.0.1",
+    "port": 6379,
+    "db": 0,
+    "password_env": "REDISCLI_AUTH",
+    "md_app_key": "susanta:xts_md_app_key",
+    "md_secret_key": "susanta:xts_md_secret_key",
+    "ia_token": "susanta:xts_ia_token",
+    "ia_user_id": "susanta:xts_ia_user_id",
+    "state_prefix": "edge:"
+  },
+  "logging": { "dir": "logs", "level": "info" }
+}
